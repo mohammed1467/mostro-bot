@@ -1,7 +1,6 @@
 {
   "name": "mostro-bot",
   "version": "1.0.0",
-  "description": "Bot made by mostroyt",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
