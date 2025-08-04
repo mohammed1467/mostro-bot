@@ -1,13 +1,14 @@
-{
-  "name": "mostro-bot",
-  "version": "1.0.0",
-  "description": "Bot made by mostroyt",
-  "main": "index.js",
-  "scripts": {
-    "start": "node index.js"
-  },
-  "dependencies": {
-    "discord.js": "^14.11.0",
-    "express": "^4.18.2"
-  }
-}
+name: mostro-bot
+build:
+  steps:
+    - name: Install Node modules
+      run: npm install
+    - name: Start app
+      run: npm run start
+run:
+  cmd: node index.js
+  env:
+    - key: TOKEN
+      value: ${TOKEN}
+    - key: PORT
+      value: "3000"
