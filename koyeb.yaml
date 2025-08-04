@@ -1,0 +1,14 @@
+name: mostro-bot
+build:
+  steps:
+    - name: Install Node modules
+      run: npm install
+    - name: Start app
+      run: npm run start
+run:
+  cmd: node index.js
+  env:
+    - key: TOKEN
+      value: ${TOKEN}
+    - key: PORT
+      value: "3000"
