@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+  <meta charset="UTF-8">
+  <title>داشبورد Mostro Bot</title>
+</head>
+<body>
+  <h1>مرحباً <%= user.username %>!</h1>
+  <p>يوجد لديك <%= user.guilds.length %> سيرفرات.</p>
+  <ul>
+    <% user.guilds.forEach(guild => { %>
+      <li><%= guild.name %> (ID: <%= guild.id %>)</li>
+    <% }) %>
+  </ul>
+</body>
+</html>
