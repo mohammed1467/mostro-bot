@@ -1,0 +1,7 @@
+MostroBot/
+├─ dashboard.js
+├─ views/
+│  └─ index.ejs
+├─ .env
+├─ package.json
+└─ index.js (بوتك)
