@@ -1,5 +1,5 @@
 // 📁 index.js
-const { Client, GatewayIntentBits, Partials, EmbedBuilder, Collection } = require('discord.js');
+const { Client, GatewayIntentBits, Partials, EmbedBuilder, Collection, PermissionsBitField } = require('discord.js');
 const { REST, Routes, SlashCommandBuilder } = require('discord.js');
 require('dotenv').config();
 const express = require('express');
@@ -19,17 +19,11 @@ const client = new Client({
 
 client.commands = new Collection();
 
-// ====== دالة لتحويل مدة التايم ======
-function parseDuration(input) {
-  const match = input.match(/^(\d+)([mhd])$/);
-  if (!match) return null;
-  const amount = parseInt(match[1]);
-  const unit = match[2];
-  const multipliers = { m: 60000, h: 3600000, d: 86400000 };
-  return amount * multipliers[unit];
-}
+// ====== Web Server لتشغيل البوت 24/7 ======
+app.get('/', (req, res) => res.send('البوت شغال ✅'));
+app.listen(process.env.PORT || 3000, () => console.log(`🌐 Web Server يعمل على المنفذ ${process.env.PORT || 3000}`));
 
-// ====== حماية الرتب ======
+// ====== دالة حماية الرتب ======
 function canInteract(executor, target, guild) {
   if (executor.id === guild.ownerId) return true;
   const me = guild.members.me || guild.members.cache.get(client.user.id);
@@ -37,6 +31,16 @@ function canInteract(executor, target, guild) {
   if (executor.roles.highest.position <= target.roles.highest.position && executor.id !== guild.ownerId) return false;
   if (me.roles.highest.position <= target.roles.highest.position) return false;
   return true;
+}
+
+// ====== دالة تحويل مدة التايم ======
+function parseDuration(input) {
+  const match = input.match(/^(\d+)([mhd])$/);
+  if (!match) return null;
+  const amount = parseInt(match[1]);
+  const unit = match[2];
+  const multipliers = { m: 60000, h: 3600000, d: 86400000 };
+  return amount * multipliers[unit];
 }
 
 // ====== أوامر السلاش ======
@@ -57,28 +61,23 @@ const slashCommands = [
     .addStringOption(opt => opt.setName('userid').setDescription('آيدي العضو').setRequired(true)),
   new SlashCommandBuilder().setName('role').setDescription('أعطاء أو إزالة رتبة')
     .addUserOption(opt => opt.setName('user').setDescription('العضو').setRequired(true))
-    .addStringOption(opt => opt.setName('role').setDescription('الرتبة (اسم أو منشن أو آيدي)').setRequired(true)),
+    .addStringOption(opt => opt.setName('role').setDescription('اسم أو منشن أو آيدي').setRequired(true)),
   new SlashCommandBuilder().setName('say').setDescription('البوت يرسل رسالة')
     .addStringOption(opt => opt.setName('message').setDescription('الرسالة').setRequired(true)),
   new SlashCommandBuilder().setName('help').setDescription('عرض قائمة الأوامر'),
 ];
 
-// ====== تسجيل أوامر السلاش ======
 const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
-(async () => {
+
+// تسجيل أوامر السلاش
+client.on('ready', async () => {
   try {
     await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { body: slashCommands });
-    console.log('✅ تم تسجيل الدخول والبوت جاهز!');
-    console.log('🟢 تم تسجيل أوامر السلاش.');
+    client.user.setActivity('dev by mostro');
+    console.log('✅ البوت جاهز و🟢 أوامر السلاش مسجلة.');
   } catch (err) {
     console.error(err);
   }
-})();
-
-// ====== حالة البوت عند التشغيل ======
-client.on('ready', () => {
-  client.user.setActivity('dev by mostro');
-  console.log(`🌐 البوت جاهز للعمل باسم: ${client.user.tag}`);
 });
 
 // ====== التعامل مع أوامر السلاش ======
@@ -88,75 +87,79 @@ client.on('interactionCreate', async interaction => {
   const guild = interaction.guild;
 
   try {
-    // الحصول على العضو المستهدف إذا كان موجود
-    const targetUser = options.getUser('user');
-    const member = targetUser ? guild.members.cache.get(targetUser.id) : null;
-
     if (['ban','kick','timeout','untimeout','role'].includes(commandName)) {
-      if (!member) return interaction.reply({ content: '⚠️ لم أتمكن من العثور على العضو.', ephemeral:true });
+      const targetUser = options.getUser('user');
+      const member = targetUser ? guild.members.cache.get(targetUser.id) : null;
+      if (!member) return interaction.reply({ content: '⚠️ لم أتمكن من العثور على العضو.', ephemeral: true });
       if (!canInteract(interaction.member, member, guild))
-        return interaction.reply({ content:'⚠️ لا يمكنك تنفيذ هذا الأمر على عضو رتبته أعلى أو مساوية لك أو للبوت.', ephemeral:true });
+        return interaction.reply({ content: '⚠️ لا يمكنك تنفيذ هذا الأمر على عضو رتبته أعلى أو مساوية لك أو للبوت.', ephemeral: true });
+
+      switch(commandName){
+        case 'ban': {
+          const reason = options.getString('reason') || 'بدون سبب';
+          await member.ban({ reason });
+          return interaction.reply(`✅ تم حظر ${member.user.tag} | السبب: ${reason}`);
+        }
+        case 'kick': {
+          const reason = options.getString('reason') || 'بدون سبب';
+          await member.kick(reason);
+          return interaction.reply(`✅ تم طرد ${member.user.tag} | السبب: ${reason}`);
+        }
+        case 'timeout': {
+          const durationStr = options.getString('duration');
+          const reason = options.getString('reason') || 'بدون سبب';
+          const durationMs = parseDuration(durationStr);
+          if(!durationMs || durationMs<60000 || durationMs>2419200000)
+            return interaction.reply({ content:'⚠️ مدة غير صالحة (1m - 28d).', ephemeral:true});
+          await member.timeout(durationMs, reason);
+          return interaction.reply(`✅ تم إعطاء تايم لـ ${member.user.tag} لمدة ${durationStr} | السبب: ${reason}`);
+        }
+        case 'untimeout': {
+          await member.timeout(null);
+          return interaction.reply(`✅ تم إزالة التايم من ${member.user.tag}`);
+        }
+        case 'role': {
+          const roleInput = options.getString('role');
+          const role = guild.roles.cache.find(r => r.name === roleInput || r.id === roleInput.replace(/[^0-9]/g,''));
+          if(!role) return interaction.reply({ content:'⚠️ لم أتمكن من العثور على الرتبة.', ephemeral:true });
+          if(member.roles.cache.has(role.id)){
+            await member.roles.remove(role);
+            return interaction.reply(`✅ تمت إزالة الرتبة ${role.name} من ${member.user.tag}`);
+          }else{
+            await member.roles.add(role);
+            return interaction.reply(`✅ تم إعطاء الرتبة ${role.name} إلى ${member.user.tag}`);
+          }
+        }
+      }
     }
 
-    switch(commandName){
-      case 'ban': {
-        const reason = options.getString('reason') || 'بدون سبب';
-        await member.ban({ reason });
-        return interaction.reply(`🔨 تم حظر ${member.user.tag} | السبب: ${reason}`);
-      }
-      case 'kick': {
-        const reason = options.getString('reason') || 'بدون سبب';
-        await member.kick(reason);
-        return interaction.reply(`👢 تم طرد ${member.user.tag} | السبب: ${reason}`);
-      }
-      case 'timeout': {
-        const durationStr = options.getString('duration');
-        const reason = options.getString('reason') || 'بدون سبب';
-        const durationMs = parseDuration(durationStr);
-        if(!durationMs || durationMs < 60000 || durationMs > 2419200000)
-          return interaction.reply({ content:'⚠️ الرجاء تحديد مدة بين 1 دقيقة و28 يوم مثل: `10m`, `2h`, `3d`', ephemeral:true });
-        await member.timeout(durationMs, reason);
-        return interaction.reply(`⏳ تم إعطاء تايم لـ ${member.user.tag} لمدة ${durationStr} | السبب: ${reason}`);
-      }
-      case 'untimeout': {
-        await member.timeout(null);
-        return interaction.reply(`✅ تم إزالة التايم من ${member.user.tag}`);
-      }
-      case 'unban': {
-        const userId = options.getString('userid');
-        try{
-          await guild.members.unban(userId);
-          return interaction.reply(`✅ تم فك الحظر عن <@${userId}>`);
-        }catch{
-          return interaction.reply({ content:'⚠️ لم أتمكن من العثور على العضو المحظور.', ephemeral:true });
-        }
-      }
-      case 'role': {
-        const roleInput = options.getString('role');
-        const role = guild.roles.cache.find(r => r.name === roleInput || r.id === roleInput.replace(/[^0-9]/g,''));
-        if(!role) return interaction.reply({ content:'⚠️ لم أتمكن من العثور على الرتبة.', ephemeral:true });
-        if(member.roles.cache.has(role.id)){
-          await member.roles.remove(role);
-          return interaction.reply(`❌ تمت إزالة الرتبة ${role.name} من ${member.user.tag}`);
-        }else{
-          await member.roles.add(role);
-          return interaction.reply(`✅ تم إعطاء الرتبة ${role.name} إلى ${member.user.tag}`);
-        }
-      }
-      case 'say': {
-        const msg = options.getString('message');
-        if(/@everyone|@here|https?:\/\//gi.test(msg)) return interaction.reply({ content:'❌ لا يمكن إرسال روابط أو منشن عام!', ephemeral:true });
-        return interaction.reply(msg);
-      }
-      case 'help': {
-        const embed = new EmbedBuilder()
-          .setTitle('📋 قائمة الأوامر')
-          .setColor(0x2b2d31)
-          .setDescription('**أوامر السلاش:** /ban /kick /timeout /untimeout /unban /role /say /help\n**أوامر نصية:** !ban !kick !timeout !untimeout !unban !role !say !help');
-        return interaction.reply({ embeds:[embed], ephemeral:true });
+    if(commandName === 'unban'){
+      const userId = options.getString('userid');
+      try{
+        await guild.members.unban(userId);
+        return interaction.reply(`✅ تم فك الحظر عن <@${userId}>`);
+      }catch{
+        return interaction.reply({ content:'⚠️ لم أتمكن من العثور على العضو المحظور.', ephemeral:true });
       }
     }
-  }catch(err){
+
+    if(commandName === 'say'){
+      const msg = options.getString('message');
+      if(/@everyone|@here|https?:\/\//gi.test(msg)) return interaction.reply({ content:'❌ لا يمكن إرسال روابط أو منشن عام!', ephemeral:true });
+      return interaction.reply(msg);
+    }
+
+    if(commandName === 'help'){
+      const embed = new EmbedBuilder()
+        .setTitle('📋 قائمة الأوامر')
+        .setColor(0x2b2d31)
+        .setDescription(`
+**أوامر السلاش:** /ban /kick /timeout /untimeout /unban /role /say /help
+**أوامر نصية:** !ban !kick !timeout !untimeout !unban !role !say !help
+        `);
+      return interaction.reply({ embeds:[embed], ephemeral:true });
+    }
+  } catch(err){
     console.error(err);
     interaction.reply({ content:'❌ حدث خطأ أثناء تنفيذ الأمر.', ephemeral:true });
   }
@@ -169,81 +172,86 @@ client.on('messageCreate', async msg=>{
   const command = args.shift()?.toLowerCase();
   const guild = msg.guild;
   const executor = msg.member;
-  const member = msg.mentions.members.first() || guild.members.cache.get(args[0]);
-
-  if(!member && !['unban'].includes(command)) return msg.reply('⚠️ الرجاء منشن العضو أو كتابة آيدي صحيح.');
 
   try{
-    switch(command){
-      case 'ban': {
-        const reason = args.slice(1).join(' ') || 'بدون سبب';
-        if(!canInteract(executor, member, guild)) return msg.reply('⚠️ لا يمكنك تنفيذ هذا الأمر على عضو رتبته أعلى أو مساوية لك أو للبوت.');
-        await member.ban({ reason });
-        return msg.reply(`🔨 تم حظر ${member.user.tag} | السبب: ${reason}`);
-      }
-      case 'kick': {
-        const reason = args.slice(1).join(' ') || 'بدون سبب';
-        if(!canInteract(executor, member, guild)) return msg.reply('⚠️ لا يمكنك تنفيذ هذا الأمر على عضو رتبته أعلى أو مساوية لك أو للبوت.');
-        await member.kick(reason);
-        return msg.reply(`👢 تم طرد ${member.user.tag} | السبب: ${reason}`);
-      }
-      case 'timeout': {
-        const duration = args[1];
-        const reason = args.slice(2).join(' ') || 'بدون سبب';
-        const durationMs = parseDuration(duration);
-        if(!durationMs || durationMs < 60000 || durationMs > 2419200000) return msg.reply('⚠️ الرجاء تحديد مدة بين 1 دقيقة و28 يوم');
-        await member.timeout(durationMs, reason);
-        return msg.reply(`⏳ تم إعطاء تايم لـ ${member.user.tag} لمدة ${duration} | السبب: ${reason}`);
-      }
-      case 'untimeout': {
-        await member.timeout(null);
-        return msg.reply(`✅ تم إزالة التايم من ${member.user.tag}`);
-      }
-      case 'unban': {
-        const userId = args[0];
-        if(!userId) return msg.reply('⚠️ الرجاء إدخال آيدي العضو.');
-        try{
-          await guild.members.unban(userId);
-          return msg.reply(`✅ تم فك الحظر عن <@${userId}>`);
-        }catch{
-          return msg.reply('⚠️ لم أتمكن من العثور على العضو المحظور.');
+    if(['ban','kick','timeout','untimeout','role'].includes(command)){
+      const member = msg.mentions.members.first() || guild.members.cache.get(args[0]);
+      if(!member) return msg.reply('⚠️ الرجاء منشن العضو أو كتابة آيدي صحيح.');
+      if(!canInteract(executor, member, guild)) return msg.reply('⚠️ لا يمكنك تنفيذ هذا الأمر على عضو رتبته أعلى أو مساوية لك أو للبوت.');
+
+      switch(command){
+        case 'ban': {
+          const reason = args.slice(1).join(' ') || 'بدون سبب';
+          await member.ban({ reason });
+          return msg.reply(`✅ تم حظر ${member.user.tag} | السبب: ${reason}`);
         }
-      }
-      case 'role': {
-        const roleInput = args[1];
-        const role = guild.roles.cache.find(r=>r.name===roleInput||r.id===roleInput.replace(/[^0-9]/g,''));
-        if(!role) return msg.reply('⚠️ لم أتمكن من العثور على الرتبة.');
-        if(member.roles.cache.has(role.id)){
-          await member.roles.remove(role);
-          return msg.reply(`❌ تمت إزالة الرتبة ${role.name} من ${member.user.tag}`);
-        }else{
-          await member.roles.add(role);
-          return msg.reply(`✅ تم إعطاء الرتبة ${role.name} إلى ${member.user.tag}`);
+        case 'kick': {
+          const reason = args.slice(1).join(' ') || 'بدون سبب';
+          await member.kick(reason);
+          return msg.reply(`✅ تم طرد ${member.user.tag} | السبب: ${reason}`);
         }
-      }
-      case 'say': {
-        const text = args.join(' ');
-        if(!text) return msg.reply('⚠️ الرجاء كتابة الرسالة.');
-        if(/@everyone|@here|https?:\/\//gi.test(text)) return msg.reply('❌ لا يمكن إرسال روابط أو منشن عام!');
-        return msg.channel.send(text);
-      }
-      case 'help': {
-        const embed = new EmbedBuilder()
-          .setTitle('📋 قائمة الأوامر')
-          .setColor(0x2b2d31)
-          .setDescription('**أوامر السلاش:** /ban /kick /timeout /untimeout /unban /role /say /help\n**أوامر نصية:** !ban !kick !timeout !untimeout !unban !role !say !help');
-        return msg.reply({ embeds:[embed] });
+        case 'timeout': {
+          const durationStr = args[1];
+          const reason = args.slice(2).join(' ') || 'بدون سبب';
+          const durationMs = parseDuration(durationStr);
+          if(!durationMs || durationMs<60000 || durationMs>2419200000)
+            return msg.reply('⚠️ الرجاء تحديد مدة بين 1 دقيقة و28 يوم مثل: `10m`, `2h`, `3d`');
+          await member.timeout(durationMs, reason);
+          return msg.reply(`✅ تم إعطاء تايم لـ ${member.user.tag} لمدة ${durationStr} | السبب: ${reason}`);
+        }
+        case 'untimeout': {
+          await member.timeout(null);
+          return msg.reply(`✅ تم إزالة التايم من ${member.user.tag}`);
+        }
+        case 'role': {
+          const roleInput = args[1];
+          const role = guild.roles.cache.find(r => r.name === roleInput || r.id === roleInput.replace(/[^0-9]/g,''));
+          if(!role) return msg.reply('⚠️ لم أتمكن من العثور على الرتبة.');
+          if(member.roles.cache.has(role.id)){
+            await member.roles.remove(role);
+            return msg.reply(`✅ تمت إزالة الرتبة ${role.name} من ${member.user.tag}`);
+          }else{
+            await member.roles.add(role);
+            return msg.reply(`✅ تم إعطاء الرتبة ${role.name} إلى ${member.user.tag}`);
+          }
+        }
       }
     }
+
+    if(command === 'unban'){
+      const userId = args[0];
+      if(!userId) return msg.reply('⚠️ الرجاء إدخال آيدي العضو.');
+      try{
+        await guild.members.unban(userId);
+        return msg.reply(`✅ تم فك الحظر عن <@${userId}>`);
+      }catch{
+        return msg.reply('⚠️ لم أتمكن من العثور على العضو المحظور.');
+      }
+    }
+
+    if(command === 'say'){
+      const message = args.join(' ');
+      if(!message) return msg.reply('⚠️ الرجاء كتابة الرسالة.');
+      if(/@everyone|@here|https?:\/\//gi.test(message)) return msg.reply('❌ لا يمكن إرسال روابط أو منشن عام!');
+      return msg.channel.send(message);
+    }
+
+    if(command === 'help'){
+      const embed = new EmbedBuilder()
+        .setTitle('📋 قائمة الأوامر')
+        .setColor(0x2b2d31)
+        .setDescription(`
+**أوامر السلاش:** /ban /kick /timeout /untimeout /unban /role /say /help
+**أوامر نصية:** !ban !kick !timeout !untimeout !unban !role !say !help
+        `);
+      return msg.reply({ embeds:[embed] });
+    }
+
   }catch(err){
     console.error(err);
     return msg.reply('❌ حدث خطأ أثناء تنفيذ الأمر.');
   }
 });
-
-// ====== Web Server لتشغيل البوت 24/7 ======
-app.get('/', (req,res)=>res.send('البوت شغال ✅'));
-app.listen(process.env.PORT || 3000, ()=>console.log(`🌐 Web Server يعمل على المنفذ ${process.env.PORT || 3000}`));
 
 // ====== تسجيل الدخول للبوت ======
 client.login(process.env.TOKEN);
