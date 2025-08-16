@@ -78,7 +78,7 @@ function parseDuration(input){
 }
 
 // AutoMod كلمات ممنوعة وروابط
-const forbiddenWords = ['badword1','badword2']; // عدل هنا
+const forbiddenWords = ['badword1','badword2']; // بيضة 
 const linkRegex = /(https?:\/\/[^\s]+)/g;
 
 client.on('messageCreate', async msg => {
