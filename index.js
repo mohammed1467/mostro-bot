@@ -19,13 +19,15 @@ const client = new Client({
 
 client.commands = new Collection();
 
-// ====== حماية الرتب ======
+// ====== دالة حماية الرتب ======
 function canInteract(executor, target, guild) {
   if (executor.id === guild.ownerId) return true;
   const me = guild.members.me || guild.members.cache.get(client.user.id);
   if (!me) return false;
+
   if (executor.roles.highest.position <= target.roles.highest.position && executor.id !== guild.ownerId) return false;
   if (me.roles.highest.position <= target.roles.highest.position) return false;
+
   return true;
 }
 
@@ -68,58 +70,57 @@ const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
 (async () => {
   try {
     await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { body: slashCommands });
-    console.log('✅ تم تسجيل الدخول باسم:', client.user?.tag || 'Mostro.Bot');
+    console.log('✅ تم تسجيل الدخول باسم: Mostro.Bot#7410');
     console.log('🟢 تم تسجيل أوامر السلاش.');
   } catch (err) {
     console.error(err);
   }
 })();
 
-// ====== عند جاهزية البوت ======
+// ====== عند تشغيل البوت ======
 client.on('ready', () => {
   client.user.setActivity('dev by mostro');
   console.log('🌐 البوت جاهز للعمل!');
 });
 
-// ====== تنفيذ أوامر السلاش ======
+// ====== التعامل مع أوامر السلاش ======
 client.on('interactionCreate', async interaction => {
   if (!interaction.isCommand()) return;
   const { commandName, options } = interaction;
   const guild = interaction.guild;
 
   try {
-    let member, targetUser;
+    const targetUser = options.getUser('user');
+    const member = targetUser ? guild.members.cache.get(targetUser.id) : null;
+
+    // أوامر على العضو
     if(['ban','kick','timeout','untimeout','role'].includes(commandName)){
-      targetUser = options.getUser('user');
-      member = targetUser ? guild.members.cache.get(targetUser.id) : null;
-      if(!member) return interaction.reply({ content:'⚠️ لم أتمكن من العثور على العضو.', ephemeral:true });
-      if(!canInteract(interaction.member, member, guild))
-        return interaction.reply({ content:'⚠️ لا يمكنك تنفيذ هذا الأمر على عضو رتبته أعلى أو مساوية لك أو للبوت.', ephemeral:true });
+      if(!member) return interaction.reply({ content: '⚠️ لم أتمكن من العثور على العضو.', ephemeral:true });
+      if(!canInteract(interaction.member, member, guild)) return interaction.reply({ content:'⚠️ لا يمكنك تنفيذ هذا الأمر على عضو رتبته أعلى أو مساوية لك أو للبوت.', ephemeral:true });
     }
 
     switch(commandName){
       case 'ban': {
         const reason = options.getString('reason') || 'بدون سبب';
         await member.ban({ reason });
-        return interaction.reply(`🔨 تم حظر ${member.user.tag} | السبب: ${reason}`);
+        return interaction.reply(`🔨 تم حظر ${targetUser.tag} | السبب: ${reason}`);
       }
       case 'kick': {
         const reason = options.getString('reason') || 'بدون سبب';
         await member.kick(reason);
-        return interaction.reply(`👢 تم طرد ${member.user.tag} | السبب: ${reason}`);
+        return interaction.reply(`👢 تم طرد ${targetUser.tag} | السبب: ${reason}`);
       }
       case 'timeout': {
         const durationStr = options.getString('duration');
         const reason = options.getString('reason') || 'بدون سبب';
         const durationMs = parseDuration(durationStr);
-        if(!durationMs || durationMs<60000 || durationMs>2419200000)
-          return interaction.reply({ content:'⚠️ مدة غير صالحة (1m - 28d).', ephemeral:true });
+        if(!durationMs || durationMs<60000 || durationMs>2419200000) return interaction.reply({ content:'⚠️ مدة غير صالحة (1m - 28d).', ephemeral:true });
         await member.timeout(durationMs, reason);
-        return interaction.reply(`⏳ تم إعطاء تايم لـ ${member.user.tag} لمدة ${durationStr} | السبب: ${reason}`);
+        return interaction.reply(`⏳ تم إعطاء تايم لـ ${targetUser.tag} لمدة ${durationStr} | السبب: ${reason}`);
       }
       case 'untimeout': {
         await member.timeout(null);
-        return interaction.reply(`✅ تم إزالة التايم من ${member.user.tag}`);
+        return interaction.reply(`✅ تم إزالة التايم من ${targetUser.tag}`);
       }
       case 'unban': {
         const userId = options.getString('userid');
@@ -132,37 +133,37 @@ client.on('interactionCreate', async interaction => {
       }
       case 'role': {
         const roleInput = options.getString('role');
-        const role = guild.roles.cache.find(r => r.name === roleInput || r.id === roleInput.replace(/[^0-9]/g,''));
+        const role = guild.roles.cache.find(r => r.name===roleInput || r.id===roleInput.replace(/[^0-9]/g,''));
         if(!role) return interaction.reply({ content:'⚠️ لم أتمكن من العثور على الرتبة.', ephemeral:true });
         if(member.roles.cache.has(role.id)){
           await member.roles.remove(role);
-          return interaction.reply(`❌ تمت إزالة الرتبة ${role.name} من ${member.user.tag}`);
+          return interaction.reply(`❌ تمت إزالة الرتبة ${role.name} من ${targetUser.tag}`);
         }else{
           await member.roles.add(role);
-          return interaction.reply(`✅ تم إعطاء الرتبة ${role.name} إلى ${member.user.tag}`);
+          return interaction.reply(`✅ تم إعطاء الرتبة ${role.name} إلى ${targetUser.tag}`);
         }
       }
       case 'say': {
-        const msg = options.getString('message');
-        if(/@everyone|@here|https?:\/\//gi.test(msg)) return interaction.reply({ content:'❌ لا يمكن إرسال روابط أو منشن عام!', ephemeral:true });
-        return interaction.reply(msg);
+        const message = options.getString('message');
+        if(!message) return interaction.reply({ content:'⚠️ الرجاء كتابة الرسالة.', ephemeral:true });
+        if(/@everyone|@here|https?:\/\//gi.test(message)) return interaction.reply({ content:'❌ لا يمكن إرسال روابط أو منشن عام!', ephemeral:true });
+        return interaction.reply(message);
       }
       case 'help': {
         const embed = new EmbedBuilder()
           .setTitle('📋 قائمة الأوامر')
           .setColor(0x2b2d31)
-          .setDescription(`**أوامر السلاش:** /ban /kick /timeout /untimeout /unban /role /say /help\n**أوامر نصية:** !ban !kick !timeout !untimeout !unban !role !say !help`);
+          .setDescription('**أوامر السلاش:** /ban /kick /timeout /untimeout /unban /role /say /help\n**أوامر نصية:** !ban !kick !timeout !untimeout !unban !role !say !help');
         return interaction.reply({ embeds:[embed], ephemeral:true });
       }
     }
-
-  }catch(err){
+  } catch(err){
     console.error(err);
     interaction.reply({ content:'❌ حدث خطأ أثناء تنفيذ الأمر.', ephemeral:true });
   }
 });
 
-// ====== تنفيذ الأوامر النصية ======
+// ====== التعامل مع الأوامر النصية ======
 client.on('messageCreate', async msg=>{
   if(!msg.guild || msg.author.bot || !msg.content.startsWith('!')) return;
 
@@ -170,8 +171,18 @@ client.on('messageCreate', async msg=>{
   const command = args.shift()?.toLowerCase();
   const guild = msg.guild;
   const executor = msg.member;
+
+  // ✅ أمر say مستقل
+  if(command === 'say'){
+    const message = args.join(' ');
+    if(!message) return msg.reply('⚠️ الرجاء كتابة الرسالة.');
+    if(/@everyone|@here|https?:\/\//gi.test(message)) return msg.reply('❌ لا يمكن إرسال روابط أو منشن عام!');
+    return msg.channel.send(message);
+  }
+
+  // باقي الأوامر التي تحتاج عضو
   let member = msg.mentions.members.first() || guild.members.cache.get(args[0]);
-  
+
   try{
     if(['ban','kick','timeout','untimeout','role'].includes(command)){
       if(!member) return msg.reply('⚠️ الرجاء منشن العضو أو كتابة آيدي صحيح.');
@@ -202,7 +213,7 @@ client.on('messageCreate', async msg=>{
         }
         case 'role': {
           const roleInput = args[1];
-          const role = guild.roles.cache.find(r => r.name === roleInput || r.id === roleInput.replace(/[^0-9]/g,''));
+          const role = guild.roles.cache.find(r=>r.name===roleInput || r.id===roleInput.replace(/[^0-9]/g,''));
           if(!role) return msg.reply('⚠️ لم أتمكن من العثور على الرتبة.');
           if(member.roles.cache.has(role.id)){
             await member.roles.remove(role);
@@ -226,18 +237,11 @@ client.on('messageCreate', async msg=>{
       }
     }
 
-    if(command==='say'){
-      const message = args.join(' ');
-      if(!message) return msg.reply('⚠️ الرجاء كتابة الرسالة.');
-      if(/@everyone|@here|https?:\/\//gi.test(message)) return msg.reply('❌ لا يمكن إرسال روابط أو منشن عام!');
-      return msg.channel.send(message);
-    }
-
     if(command==='help'){
       const embed = new EmbedBuilder()
         .setTitle('📋 قائمة الأوامر')
         .setColor(0x2b2d31)
-        .setDescription(`**أوامر السلاش:** /ban /kick /timeout /untimeout /unban /role /say /help\n**أوامر نصية:** !ban !kick !timeout !untimeout !unban !role !say !help`);
+        .setDescription('**أوامر السلاش:** /ban /kick /timeout /untimeout /unban /role /say /help\n**أوامر نصية:** !ban !kick !timeout !untimeout !unban !role !say !help');
       return msg.reply({ embeds:[embed] });
     }
 
@@ -249,7 +253,7 @@ client.on('messageCreate', async msg=>{
 
 // ====== Web Server لتشغيل البوت 24/7 ======
 app.get('/', (req,res)=>res.send('البوت شغال ✅'));
-app.listen(process.env.PORT || 3000, ()=>console.log(`🌐 Web Server يعمل على المنفذ ${process.env.PORT || 3000}`));
+app.listen(process.env.PORT || 3000,()=>console.log(`🌐 Web Server يعمل على المنفذ ${process.env.PORT || 3000}`));
 
 // ====== تسجيل الدخول للبوت ======
 client.login(process.env.TOKEN);
