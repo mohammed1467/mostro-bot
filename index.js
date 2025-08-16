@@ -1,11 +1,10 @@
-// 📁 index.js
-const { Client, GatewayIntentBits, Partials, EmbedBuilder, PermissionsBitField, Collection } = require('discord.js');
-const fs = require('fs');
+const { Client, GatewayIntentBits, Partials, EmbedBuilder, Collection } = require('discord.js');
 const { REST, Routes, SlashCommandBuilder } = require('discord.js');
 require('dotenv').config();
 const express = require('express');
 const app = express();
 
+// ====== إعداد البوت ======
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -19,7 +18,7 @@ const client = new Client({
 
 client.commands = new Collection();
 
-//✅ تسجيل أوامر السلاش
+// ====== أوامر السلاش ======
 const slashCommands = [
   new SlashCommandBuilder().setName('ban').setDescription('Ban a member')
     .addUserOption(opt => opt.setName('user').setDescription('العضو').setRequired(true))
@@ -42,7 +41,9 @@ const slashCommands = [
 
   new SlashCommandBuilder().setName('role').setDescription('أعطاء أو إزالة رتبة')
     .addUserOption(opt => opt.setName('user').setDescription('العضو').setRequired(true))
-    .addStringOption(opt => opt.setName('role').setDescription('الرتبة (اسم أو منشن أو آيدي)').setRequired(true))
+    .addStringOption(opt => opt.setName('role').setDescription('الرتبة (اسم أو منشن أو آيدي)').setRequired(true)),
+
+  new SlashCommandBuilder().setName('help').setDescription('عرض قائمة الأوامر')
 ];
 
 const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
@@ -64,68 +65,87 @@ client.on('ready', () => {
   client.user.setActivity('dev by mostro');
 });
 
+// ====== حماية الرتب ======
+function canInteract(executor, target, guild) {
+  if (executor.id === guild.ownerId) return true;
+  const me = guild.members.me || guild.members.cache.get(client.user.id);
+  if (!me) return false;
+
+  if (executor.roles.highest.position <= target.roles.highest.position && executor.id !== guild.ownerId) return false;
+  if (me.roles.highest.position <= target.roles.highest.position) return false;
+
+  return true;
+}
+
+// ====== التعامل مع أوامر السلاش ======
 client.on('interactionCreate', async interaction => {
   if (!interaction.isCommand()) return;
   const { commandName, options } = interaction;
+  const targetUser = options.getUser('user');
+  const member = targetUser ? interaction.guild.members.cache.get(targetUser.id) : null;
+  const guild = interaction.guild;
+
+  if (['ban', 'kick', 'timeout', 'untimeout', 'role'].includes(commandName)) {
+    if (!member) return interaction.reply({ content: '⚠️ لم أتمكن من العثور على العضو.', ephemeral: true });
+    if (!canInteract(interaction.member, member, guild)) {
+      return interaction.reply({ content: '⚠️ لا يمكنك تنفيذ الأمر على عضو رتبته أعلى أو مساوية لك أو للبوت.', ephemeral: true });
+    }
+  }
 
   try {
-    const target = options.getUser('user');
-    const member = interaction.guild.members.cache.get(target?.id);
-
     switch (commandName) {
-      case 'ban': {
+      case 'help':
+        const embed = new EmbedBuilder()
+          .setTitle('📋 قائمة الأوامر')
+          .setColor(0x2b2d31)
+          .setDescription(`**أوامر بالسلاش:**\n</ban:0> — حظر عضو\n</kick:0> — طرد عضو\n</timeout:0> — توقيت مؤقت\n</untimeout:0> — إزالة التوقيت\n</unban:0> — إلغاء الحظر\n</role:0> — إعطاء أو إزالة رتبة\n/help — عرض هذه القائمة`)
+          .setFooter({ text: 'Mostro Bot | dev by mostro', iconURL: client.user.displayAvatarURL() });
+        return interaction.reply({ embeds: [embed], ephemeral: true });
+
+      case 'ban':
         const reason = options.getString('reason') || 'بدون سبب';
-        if (!member) return interaction.reply({ content: '⚠️ لم أتمكن من العثور على العضو.', ephemeral: true });
         await member.ban({ reason });
-        return interaction.reply(`🔨 تم حظر ${target.tag} | السبب: ${reason}`);
-      }
+        return interaction.reply(`<a:Banned:1402651303246823425> تم حظر ${targetUser.tag} | السبب: ${reason}`);
 
-      case 'kick': {
-        const reason = options.getString('reason') || 'بدون سبب';
-        if (!member) return interaction.reply({ content: '⚠️ لم أتمكن من العثور على العضو.', ephemeral: true });
-        await member.kick(reason);
-        return interaction.reply(`👢 تم طرد ${target.tag} | السبب: ${reason}`);
-      }
+      case 'kick':
+        const reasonKick = options.getString('reason') || 'بدون سبب';
+        await member.kick(reasonKick);
+        return interaction.reply(`<:Kick:1384528883876892794> تم طرد ${targetUser.tag} | السبب: ${reasonKick}`);
 
-      case 'timeout': {
+      case 'timeout':
         const durationStr = options.getString('duration');
-        const reason = options.getString('reason') || 'بدون سبب';
+        const reasonTimeout = options.getString('reason') || 'بدون سبب';
         const durationMs = parseDuration(durationStr);
         if (!durationMs || durationMs < 60000 || durationMs > 2419200000)
           return interaction.reply({ content: '⚠️ الرجاء تحديد مدة بين 1 دقيقة و28 يوم مثل: `10m`, `2h`, `3d`', ephemeral: true });
-        await member.timeout(durationMs, reason);
-        return interaction.reply(`⏳ تم توقيت ${target.tag} لمدة ${durationStr} | السبب: ${reason}`);
-      }
+        await member.timeout(durationMs, reasonTimeout);
+        return interaction.reply(`<:Timeout:1402650647983030443> تم إعطاء تايم لـ ${targetUser.tag} لمدة ${durationStr} | السبب: ${reasonTimeout}`);
 
       case 'untimeout':
-        if (!member) return interaction.reply({ content: '⚠️ لم أتمكن من العثور على العضو.', ephemeral: true });
         await member.timeout(null);
-        return interaction.reply(`✅ تم إزالة التوقيت عن ${target.tag}`);
+        return interaction.reply(`<:Timeout:1402650647983030443> تم إزالة التايم عن ${targetUser.tag}`);
 
-      case 'unban': {
+      case 'unban':
         const userId = options.getString('userid');
         try {
           await interaction.guild.members.unban(userId);
-          return interaction.reply(`✅ تم فك الحظر عن <@${userId}>`);
+          return interaction.reply(`<:warn:1402651669501841539> تم فك الحظر عن <@${userId}>`);
         } catch {
           return interaction.reply({ content: '⚠️ لم أتمكن من العثور على العضو المحظور.', ephemeral: true });
         }
-      }
 
-      case 'role': {
+      case 'role':
         const roleInput = options.getString('role');
         const role = interaction.guild.roles.cache.find(r => r.name === roleInput || r.id === roleInput.replace(/[^0-9]/g, ''));
         if (!role) return interaction.reply({ content: '⚠️ لم أتمكن من العثور على الرتبة.', ephemeral: true });
-        if (!member) return interaction.reply({ content: '⚠️ لم أتمكن من العثور على العضو.', ephemeral: true });
 
         if (member.roles.cache.has(role.id)) {
           await member.roles.remove(role);
-          return interaction.reply(`❌ تمت إزالة الرتبة ${role.name} من ${target.tag}`);
+          return interaction.reply(`<:moderator_roles:1394841082797490370> تمت إزالة الرتبة ${role.name} من ${targetUser.tag}`);
         } else {
           await member.roles.add(role);
-          return interaction.reply(`✅ تم إعطاء الرتبة ${role.name} إلى ${target.tag}`);
+          return interaction.reply(`<:moderator_roles:1394841082797490370> تم إعطاء الرتبة ${role.name} إلى ${targetUser.tag}`);
         }
-      }
     }
   } catch (err) {
     console.error(err);
@@ -133,77 +153,7 @@ client.on('interactionCreate', async interaction => {
   }
 });
 
-// الرسائل النصية
-client.on('messageCreate', async msg => {
-  if (!msg.guild || msg.author.bot || !msg.content.startsWith('!')) return;
-
-  const args = msg.content.slice(1).trim().split(/ +/);
-  const command = args.shift()?.toLowerCase();
-
-  const member = msg.mentions.members.first() || msg.guild.members.cache.get(args[0]);
-  const duration = args[1];
-  const reason = args.slice(2).join(' ').trim() || 'بدون سبب';
-
-  if (!member && !['unban'].includes(command)) return msg.reply('⚠️ الرجاء منشن العضو أو كتابة آيدي صحيح.');
-
-  try {
-    switch (command) {
-      case 'ban':
-        await member.ban({ reason });
-        msg.reply(`🔨 تم حظر ${member?.user?.tag || 'عضو غير معروف'} | السبب: ${reason}`);
-        break;
-
-      case 'kick':
-        await member.kick(reason);
-        msg.reply(`👢 تم طرد ${member?.user?.tag || 'عضو غير معروف'} | السبب: ${reason}`);
-        break;
-
-      case 'timeout': {
-        const durationMs = parseDuration(duration);
-        if (!durationMs || durationMs < 60000 || durationMs > 2419200000)
-          return msg.reply('⚠️ الرجاء تحديد مدة بين 1 دقيقة و28 يوم مثل: `10m`, `2h`, `3d`');
-        await member.timeout(durationMs, reason);
-        msg.reply(`⏳ تم توقيت ${member?.user?.tag || 'عضو غير معروف'} لمدة ${duration} | السبب: ${reason}`);
-        break;
-      }
-
-      case 'untimeout':
-        await member.timeout(null);
-        msg.reply(`✅ تم إزالة التوقيت عن ${member?.user?.tag || 'عضو غير معروف'}`);
-        break;
-
-      case 'unban': {
-        const userId = args[0];
-        try {
-          await msg.guild.members.unban(userId);
-          msg.reply(`✅ تم فك الحظر عن <@${userId}>`);
-        } catch {
-          msg.reply('⚠️ لم أتمكن من العثور على العضو المحظور.');
-        }
-        break;
-      }
-
-      case 'role': {
-        const roleInput = args[1];
-        const role = msg.guild.roles.cache.find(r => r.name === roleInput || r.id === roleInput.replace(/[^0-9]/g, ''));
-        if (!role) return msg.reply('⚠️ لم أتمكن من العثور على الرتبة.');
-
-        if (member.roles.cache.has(role.id)) {
-          await member.roles.remove(role);
-          msg.reply(`❌ تمت إزالة الرتبة ${role.name} من ${member?.user?.tag || 'عضو غير معروف'}`);
-        } else {
-          await member.roles.add(role);
-          msg.reply(`✅ تم إعطاء الرتبة ${role.name} إلى ${member?.user?.tag || 'عضو غير معروف'}`);
-        }
-        break;
-      }
-    }
-  } catch (err) {
-    console.error(err);
-    msg.reply('❌ حدث خطأ أثناء تنفيذ الأمر.');
-  }
-});
-
+// ====== دالة لتحويل مدة التايم ======
 function parseDuration(input) {
   const match = input.match(/^[0-9]+[mhd]$/);
   if (!match) return null;
@@ -213,13 +163,9 @@ function parseDuration(input) {
   return amount * multipliers[unit];
 }
 
+// ====== Web Server لتشغيل البوت 24/7 ======
+app.get('/', (req, res) => res.send('البوت شغال ✅'));
+app.listen(process.env.PORT || 3000, () => console.log(`🌐 Web Server يعمل على المنفذ ${process.env.PORT || 3000}`));
+
+// ====== تسجيل الدخول للبوت ======
 client.login(process.env.TOKEN);
-
-// 🌐 Web Server لتشغيل البوت 24/7
-app.get('/', (req, res) => {
-  res.send('البوت شغال ✅');
-});
-
-app.listen(3000, () => {
-  console.log('🌐 Web Server يعمل على المنفذ 3000');
-});
