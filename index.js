@@ -27,7 +27,7 @@ function canInteract(executor, target, guild) {
   return true;
 }
 
-// دالة تحويل مدة تايم
+// دالة تحويل مدة التايم
 function parseDuration(input) {
   const match = input.match(/^(\d+)([mhd])$/);
   if (!match) return null;
@@ -193,21 +193,18 @@ client.on('messageCreate', async msg=>{
           const durationStr = args[1];
           const reason = args.slice(2).join(' ') || 'بدون سبب';
           const durationMs = parseDuration(durationStr);
-          if(!durationMs || durationMs<60000 || durationMs>241920000
-          ) return msg.reply('⚠️ الرجاء تحديد مدة بين 1 دقيقة و28 يوم مثل: `10m`, `2h`, `3d`');
+          if(!durationMs || durationMs<60000 || durationMs>2419200000) 
+            return msg.reply('⚠️ الرجاء تحديد مدة بين 1 دقيقة و28 يوم مثل: `10m`, `2h`, `3d`');
           await member.timeout(durationMs, reason);
           return msg.reply(`✅ تم إعطاء تايم لـ ${member.user.tag} لمدة ${durationStr} | السبب: ${reason}`);
         }
         case 'untimeout': {
-          const member = msg.mentions.members.first() || guild.members.cache.get(args[0]);
           if(!member) return msg.reply('⚠️ الرجاء منشن العضو أو كتابة آيدي صحيح.');
           if(!canInteract(executor, member, guild)) return msg.reply('⚠️ لا يمكنك إزالة التايم من عضو رتبته أعلى أو مساوية لك أو للبوت.');
           await member.timeout(null);
           return msg.reply(`✅ تم إزالة التايم من ${member.user.tag}`);
         }
         case 'role': {
-          const member = msg.mentions.members.first() || guild.members.cache.get(args[0]);
-          if(!member) return msg.reply('⚠️ الرجاء منشن العضو أو كتابة آيدي صحيح.');
           const roleInput = args[1];
           const role = guild.roles.cache.find(r => r.name === roleInput || r.id === roleInput.replace(/[^0-9]/g,''));
           if(!role) return msg.reply('⚠️ لم أتمكن من العثور على الرتبة.');
@@ -259,6 +256,6 @@ client.on('messageCreate', async msg=>{
 
 // 🌐 Web Server لتشغيل البوت 24/7
 app.get('/', (req,res)=>res.send('البوت شغال ✅'));
-app.listen(3000,()=>console.log('🌐 Web Server يعمل على المنفذ 3000'));
+app.listen(process.env.PORT || 3000,()=>console.log(`🌐 Web Server يعمل على المنفذ ${process.env.PORT || 3000}`));
 
 client.login(process.env.TOKEN);
